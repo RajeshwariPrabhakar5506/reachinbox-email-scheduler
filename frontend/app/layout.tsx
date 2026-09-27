@@ -1,19 +1,18 @@
-import type { Metadata } from 'next';
 import './globals.css';
-
-export const metadata: Metadata = {
-  title: 'ReachInbox - Email Scheduler',
-  description: 'Production-grade Email Job Scheduler Dashboard',
-};
+import { GoogleOAuthProvider } from '@react-oauth/google';
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en">
-      <body className="bg-gray-50 antialiased">{children}</body>
+      <body>
+        <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "YOUR_GOOGLE_CLIENT_ID_HERE"}>
+          {children}
+        </GoogleOAuthProvider>
+      </body>
     </html>
   );
 }

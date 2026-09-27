@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import multer from 'multer'; // <-- 1. Import multer
 import { register, login } from './controllers/authController';
 import { 
   scheduleEmail, 
@@ -10,6 +11,7 @@ import {
 import { processStuckEmails } from './workers/emailWorker';
 
 const app = express();
+const upload = multer({ storage: multer.memoryStorage() }); // <-- 2. Configure multer memory storage
 
 app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json());
@@ -22,8 +24,8 @@ app.get('/', (req, res) => {
 app.post('/api/auth/register', register);
 app.post('/api/auth/login', login);
 
-// Email Scheduler Routes
-app.post('/api/emails/schedule', scheduleEmail);
+// Email Scheduler Routes (Add upload.array('attachments') here so FormData fields populate)
+app.post('/api/emails/schedule', upload.array('attachments'), scheduleEmail);
 app.get('/api/emails/scheduled', getScheduledEmails);
 app.get('/api/emails/sent', getSentEmails);
 app.get('/api/emails/search', searchEmails);

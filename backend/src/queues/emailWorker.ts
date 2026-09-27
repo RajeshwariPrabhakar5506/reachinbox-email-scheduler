@@ -1,102 +1,70 @@
 import { Worker, Job } from 'bullmq';
-import nodemailer from 'nodemailer';
-import { prisma } from '../config/db';
-import { emailQueue } from '../queues/emailQueue';
+import Redis from 'ioredis';
+import { sendMail } from '../config/mailer'; // adjust path if needed
 
-// 1. Transporter setup
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS, // Google 16-character App Password
-  },
-});
-
-// 2. Redis connection options
-const redisOptions = {
+const redisConnection = new Redis({
   host: process.env.REDIS_HOST || '127.0.0.1',
   port: Number(process.env.REDIS_PORT) || 6379,
-};
+  maxRetriesPerRequest: null,
+});
 
-// 3. Define Worker
+// Configurable limit via .env (default: 200 emails per sender per hour)
+const MAX_EMAILS_PER_HOUR = Number(process.env.MAX_EMAILS_PER_HOUR) || 200;
+
 export const emailWorker = new Worker(
   'email-queue',
   async (job: Job) => {
-    const { emailId } = job.data;
-    console.log(`\n[Worker] Processing email ID: ${emailId}`);
+    const { to, subject, body, attachments, senderEmail } = job.data;
+    const sender = senderEmail || 'default-sender';
 
-    const emailRecord = await prisma.emailSchedule.findUnique({
-      where: { id: emailId },
-    });
+    // Current hour key: e.g., "rate-limit:user@example.com:2026-09-27T17"
+    const currentHourWindow = new Date().toISOString().slice(0, 13);
+    const rateLimitKey = `rate-limit:${sender}:${currentHourWindow}`;
 
-    if (!emailRecord) {
-      console.log(`[Worker] Record ${emailId} not found.`);
-      return;
+    // Increment Redis counter
+    const currentCount = await redisConnection.incr(rateLimitKey);
+
+    // Set expiration on first hit (3600 seconds = 1 hour)
+    if (currentCount === 1) {
+      await redisConnection.expire(rateLimitKey, 3600);
     }
 
-    try {
-      const info = await transporter.sendMail({
-        from: `"${emailRecord.senderEmail}" <${process.env.SMTP_USER}>`,
-        to: emailRecord.recipient,
-        subject: emailRecord.subject,
-        text: emailRecord.body,
-        html: `<p>${emailRecord.body.replace(/\n/g, '<br>')}</p>`,
-      });
+    // Check if hourly limit exceeded
+    if (currentCount > MAX_EMAILS_PER_HOUR) {
+      console.warn(`[Rate Limit] Sender ${sender} hit max ${MAX_EMAILS_PER_HOUR}/hr. Rescheduling...`);
 
-      console.log(`[Worker] Email sent! MessageID: ${info.messageId}`);
+      // Calculate delay until the start of the next hour
+      const now = new Date();
+      const nextHour = new Date(now);
+      nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+      const delayMs = nextHour.getTime() - now.getTime();
 
-      await prisma.emailSchedule.update({
-        where: { id: emailId },
-        data: {
-          status: 'SENT',
-          sentAt: new Date(),
-        },
-      });
-    } catch (err: any) {
-      console.error(`[Worker] Failed to send email: ${err.message}`);
-
-      await prisma.emailSchedule.update({
-        where: { id: emailId },
-        data: {
-          status: 'FAILED',
-          errorMessage: err.message,
-        },
-      });
-
-      throw err;
+      // Move job to delayed queue for next hour window
+      await job.moveToDelayed(Date.now() + delayMs, job.token);
+      throw new Error(`Rate limit exceeded for ${sender}. Job rescheduled for next hour.`);
     }
+
+    // Process email sending via Ethereal
+    console.log(`[Worker Processing] Sending to ${to} via sender ${sender}...`);
+    const info = await sendMail(to, subject, body, attachments);
+    return { status: 'SENT', messageId: info.messageId };
   },
-  { connection: redisOptions }
+  {
+    connection: redisConnection,
+    // 1. Configurable Worker Concurrency
+    concurrency: 5,
+    // 2. Minimum Delay Throttling (2-second minimum gap between sends)
+    limiter: {
+      max: 1,
+      duration: 2000,
+    },
+  }
 );
 
 emailWorker.on('completed', (job) => {
-  console.log(`[Worker] Job ${job.id} completed!`);
+  console.log(`[Job ${job.id}] Completed successfully.`);
 });
 
 emailWorker.on('failed', (job, err) => {
-  console.error(`[Worker] Job ${job?.id} failed: ${err.message}`);
+  console.error(`[Job ${job?.id}] Failed: ${err.message}`);
 });
-
-// 4. Function to auto-drain and send any stuck scheduled emails
-export const processStuckEmails = async () => {
-  try {
-    const overdue = await prisma.emailSchedule.findMany({
-      where: {
-        status: 'SCHEDULED',
-      },
-    });
-
-    console.log(`[Worker Sync] Found ${overdue.length} scheduled email(s) waiting in DB.`);
-
-    for (const email of overdue) {
-      console.log(`[Worker Sync] Queueing overdue email ID: ${email.id}`);
-      await emailQueue.add(
-        'send-email',
-        { emailId: email.id },
-        { delay: 0 } // Run immediately
-      );
-    }
-  } catch (err) {
-    console.error('[Worker Sync Error]:', err);
-  }
-};

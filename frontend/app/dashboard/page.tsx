@@ -16,28 +16,22 @@ export default function Dashboard() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [user, setUser] = useState<{ id: string; name: string; email: string; avatar?: string } | null>(null);
 
-  // 1. Check Authentication & Load User Session safely on Mount
+  // 1. Single unified Authentication & Session Check on Mount
   useEffect(() => {
     try {
       const storedUser = localStorage.getItem('user');
       const token = localStorage.getItem('token');
 
       if (!token || !storedUser) {
-        // Fallback demo user if not logged in via auth form yet
-        const defaultUser = {
-          id: 'user-123',
-          name: 'Rajeshwari P',
-          email: 'prabhakarrajeshwari306@gmail.com',
-          avatar: '',
-        };
-        setUser(defaultUser);
-        localStorage.setItem('user', JSON.stringify(defaultUser));
-        localStorage.setItem('token', 'demo-token-123');
-      } else {
-        setUser(JSON.parse(storedUser));
+        // Redirect to login if no valid session found
+        router.push('/login');
+        return;
       }
+
+      setUser(JSON.parse(storedUser));
     } catch (err) {
       console.error('Error reading session:', err);
+      router.push('/login');
     } finally {
       setIsCheckingAuth(false);
     }
@@ -68,23 +62,7 @@ export default function Dashboard() {
       fetchEmails();
     }
   }, [activeTab, user, isCheckingAuth]);
-useEffect(() => {
-  const token = localStorage.getItem('token');
-  const storedUser = localStorage.getItem('user');
 
-  if (!token || !storedUser) {
-    // If no valid session, send straight to login
-    router.push('/login');
-  } else {
-    try {
-      setUser(JSON.parse(storedUser));
-    } catch {
-      router.push('/login');
-    } finally {
-      setIsCheckingAuth(false);
-    }
-  }
-}, [router]);
   // Loading state during SSR / Initial Auth Check
   if (isCheckingAuth) {
     return (

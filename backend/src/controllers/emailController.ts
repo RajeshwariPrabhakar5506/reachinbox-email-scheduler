@@ -16,25 +16,25 @@ export const scheduleEmail = async (req: Request, res: Response) => {
     const scheduledDate = new Date(scheduledAt);
     const delay = scheduledDate.getTime() - Date.now();
 
-    const targetUserId = userId || 'user-123';
     const targetUserEmail = userEmail || senderEmail || 'prabhakarrajeshwari306@gmail.com';
     const targetUserName = userName || 'Rajeshwari P';
+    const fallbackUserId = userId || 'user-123';
 
-    // 1. Ensure user exists in PostgreSQL database
-    await prisma.user.upsert({
-      where: { id: targetUserId },
+    // 1. Ensure user exists in PostgreSQL database by looking up / upserting via email
+    // This guarantees we get the exact primary key id that PostgreSQL recognizes.
+    const dbUser = await prisma.user.upsert({
+      where: { email: targetUserEmail },
       update: {
-        email: targetUserEmail,
         name: targetUserName,
       },
       create: {
-        id: targetUserId,
+        id: fallbackUserId,
         email: targetUserEmail,
         name: targetUserName,
       },
     });
 
-    // 2. Create EmailSchedule record in database
+    // 2. Create EmailSchedule record in database using the reliable dbUser.id
     const email = await prisma.emailSchedule.create({
       data: {
         recipient,
@@ -43,7 +43,7 @@ export const scheduleEmail = async (req: Request, res: Response) => {
         senderEmail: targetUserEmail,
         scheduledAt: scheduledDate,
         status: 'SCHEDULED',
-        userId: targetUserId,
+        userId: dbUser.id, // Always matches the database user primary key!
       },
     });
 
@@ -81,11 +81,23 @@ export const scheduleEmail = async (req: Request, res: Response) => {
  */
 export const getScheduledEmails = async (req: Request, res: Response) => {
   try {
-    const userId = (req.query.userId as string) || 'user-123';
+    const rawUserId = (req.query.userId as string) || 'user-123';
+
+    // Look up user by id or email to ensure we fetch records accurately even if frontend ID differs slightly
+    const userRecord = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: rawUserId },
+          { email: 'prabhakarrajeshwari306@gmail.com' }
+        ]
+      }
+    });
+
+    const targetId = userRecord ? userRecord.id : rawUserId;
 
     const emails = await prisma.emailSchedule.findMany({
       where: {
-        userId,
+        userId: targetId,
         status: 'SCHEDULED',
       },
       orderBy: {
@@ -105,11 +117,22 @@ export const getScheduledEmails = async (req: Request, res: Response) => {
  */
 export const getSentEmails = async (req: Request, res: Response) => {
   try {
-    const userId = (req.query.userId as string) || 'user-123';
+    const rawUserId = (req.query.userId as string) || 'user-123';
+
+    const userRecord = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: rawUserId },
+          { email: 'prabhakarrajeshwari306@gmail.com' }
+        ]
+      }
+    });
+
+    const targetId = userRecord ? userRecord.id : rawUserId;
 
     const emails = await prisma.emailSchedule.findMany({
       where: {
-        userId,
+        userId: targetId,
         status: 'SENT',
       },
       orderBy: {
@@ -130,12 +153,23 @@ export const getSentEmails = async (req: Request, res: Response) => {
 export const searchEmails = async (req: Request, res: Response) => {
   try {
     const { query, userId } = req.query;
-    const targetUserId = (userId as string) || 'user-123';
+    const rawUserId = (userId as string) || 'user-123';
     const searchQuery = (query as string) || '';
+
+    const userRecord = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: rawUserId },
+          { email: 'prabhakarrajeshwari306@gmail.com' }
+        ]
+      }
+    });
+
+    const targetId = userRecord ? userRecord.id : rawUserId;
 
     const emails = await prisma.emailSchedule.findMany({
       where: {
-        userId: targetUserId,
+        userId: targetId,
         OR: [
           { recipient: { contains: searchQuery, mode: 'insensitive' } },
           { subject: { contains: searchQuery, mode: 'insensitive' } },
