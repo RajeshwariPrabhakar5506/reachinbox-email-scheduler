@@ -1,0 +1,35 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+mmodel User {
+  id           String          @id @default(uuid())
+  email        String          @unique
+  password     String?
+  name         String?
+  avatar       String?
+  slackToken   String?
+  slackWebhook String?
+  createdAt    DateTime        @default(now())
+  emails       EmailSchedule[]
+}
+model EmailSchedule {
+  id           String    @id @default(uuid())
+  recipient    String
+  subject      String
+  body         String
+  senderEmail  String
+  scheduledAt  DateTime
+  sentAt       DateTime?
+  status       String    @default("SCHEDULED")
+  jobId        String?
+  errorMessage String?
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  createdAt    DateTime  @default(now())
+}

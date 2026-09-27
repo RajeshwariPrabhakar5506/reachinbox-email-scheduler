@@ -1,0 +1,39 @@
+{
+  "name": "email-scheduler-backend",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts"
+  },
+  "dependencies": {
+    "@bull-board/api": "^5.10.0",
+    "@bull-board/express": "^5.10.0",
+    "@elastic/elasticsearch": "^8.11.0",
+    "@prisma/client": "^5.7.0",
+    "axios": "^1.6.2",
+    "bcryptjs": "^3.0.3",
+    "bullmq": "^5.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "google-auth-library": "^9.4.1",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.4.0",
+    "nodemailer": "^6.10.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^20.10.0",
+    "@types/nodemailer": "^6.4.24",
+    "prisma": "^5.7.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.2"
+  }
+}
